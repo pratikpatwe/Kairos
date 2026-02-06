@@ -1,9 +1,9 @@
 // @ts-ignore
 import PDFParser from 'pdf2json';
-import { GoogleGenAI } from '@google/genai';
 import { normalizeTransaction } from '../normalizer';
 import { categorizeTransaction, Category } from '../categorizer';
 import { Channel } from '../normalizer';
+import { chatCompletion } from '../fastrouter';
 
 // Transaction types
 export type TransactionType = 'credit' | 'debit';
@@ -20,9 +20,6 @@ export interface ParsedTransaction {
     tags: string[];
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-const modelName = 'gemini-3-flash-preview';
-
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     return new Promise((resolve, reject) => {
         const pdfParser = new PDFParser(null, true); // true = text content only
@@ -30,8 +27,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
         pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
 
         pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
-            // Extract text from the parsed data
-            // pdf2json returns URL-encoded text, so we need to decode it
             const text = pdfParser.getRawTextContent();
             resolve(text);
         });
@@ -39,7 +34,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
         pdfParser.parseBuffer(buffer);
     });
 }
-
 
 export async function parseWithGemini(text: string): Promise<ParsedTransaction[]> {
     const prompt = `
@@ -62,31 +56,44 @@ export async function parseWithGemini(text: string): Promise<ParsedTransaction[]
     - If a category is not clear, use 'Other'.
     - If channel is not clear, use 'Other'.
     - Extract meaningful merchant names.
-    - Return ONLY the JSON array, no markdown formatting.
+    - Return ONLY the JSON array.
 
     Text to analyze:
-    ${text.substring(0, 30000)} // Truncate to avoid token limits if necessary
+    ${text.substring(0, 30000)}
     `;
 
     try {
-        const result = await ai.models.generateContent({
-            model: modelName,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-            }
+        const result = await chatCompletion([
+            { role: 'user', content: prompt }
+        ], {
+            response_format: { type: 'json_object' }
         });
 
-        let textResponse = result.text;
+        let textResponse = result.choices[0].message.content;
         if (!textResponse) {
-            throw new Error("Gemini returned an empty response.");
+            throw new Error("FastRouter returned an empty response.");
         }
 
-        const rawTransactions = JSON.parse(textResponse);
+        // Sometimes JSON mode returns an object { "transactions": [...] } or similar depending on the model
+        // but here we expect an array. If it's a string, we parse it.
+        let rawTransactions: any[];
+        const parsed = JSON.parse(textResponse);
 
-        // Map to ParsedTransaction to ensure types and perform fallback normalization if needed
+        if (Array.isArray(parsed)) {
+            rawTransactions = parsed;
+        } else if (parsed.transactions && Array.isArray(parsed.transactions)) {
+            rawTransactions = parsed.transactions;
+        } else {
+            // Fallback: search for array in the object
+            const possibleArray = Object.values(parsed).find(v => Array.isArray(v));
+            if (possibleArray) {
+                rawTransactions = possibleArray as any[];
+            } else {
+                throw new Error("Could not find transactions array in response");
+            }
+        }
+
         return rawTransactions.map((t: any) => {
-            // Fallback normalization/categorization if Gemini missed it or for consistency
             const normalized = normalizeTransaction(t.description);
             const fallbackCategory = categorizeTransaction(normalized.merchant, t.description, t.type);
 
@@ -104,26 +111,21 @@ export async function parseWithGemini(text: string): Promise<ParsedTransaction[]
         });
 
     } catch (error: any) {
-        console.error("Gemini Parsing Error:", error);
-        throw new Error("Gemini Parsing Error: " + (error.message || error));
+        console.error("FastRouter Parsing Error:", error);
+        throw new Error("FastRouter Parsing Error: " + (error.message || error));
     }
 }
 
-// Generic parser that now uses Gemini
 export async function parseBankStatementPDF(buffer: Buffer): Promise<ParsedTransaction[]> {
     try {
         const text = await extractTextFromPDF(buffer);
-
-        // Use Gemini for parsing
         return await parseWithGemini(text);
-
     } catch (error) {
         console.error("PDF Text Extraction Error:", error);
         throw new Error("Failed to parse PDF: " + String(error));
     }
 }
 
-// Keep these exports for backward compatibility, but they all use the generic Gemini parser now
 export async function parseHDFCStatement(buffer: Buffer): Promise<ParsedTransaction[]> {
     return parseBankStatementPDF(buffer);
 }
@@ -137,6 +139,5 @@ export async function parseICICIStatement(buffer: Buffer): Promise<ParsedTransac
 }
 
 export async function parseStatement(buffer: Buffer, bankHint?: string): Promise<ParsedTransaction[]> {
-    // We ignore bankHint now because Gemini is smart enough to handle generic text
     return parseBankStatementPDF(buffer);
 }

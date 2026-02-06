@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getUserFromRequest } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Transaction from '@/models/Transaction';
@@ -7,20 +6,7 @@ import Habit from '@/models/Habit';
 import Profile from '@/models/Profile';
 import ChatSession from '@/models/ChatSession';
 import { allTools, toolsMap } from '@/tools/tools-index';
-
-const API_KEYS = [
-    process.env.GEMINI_API_KEY_PP_1,
-    process.env.GEMINI_API_KEY_PD_1,
-    process.env.GEMINI_API_KEY_KJ_1
-].filter(Boolean) as string[];
-
-let currentKeyIndex = 0;
-
-function getGenAI() {
-    const key = API_KEYS[currentKeyIndex];
-    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-    return new GoogleGenerativeAI(key);
-}
+import { chatCompletion, ChatMessage } from '@/lib/fastrouter';
 
 export async function POST(req: NextRequest) {
     try {
@@ -68,31 +54,14 @@ export async function POST(req: NextRequest) {
                 : 'Life Context: No active habits being tracked.';
         }
 
-        const history = session.messages.map((m: any) => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content }]
+        const history: ChatMessage[] = session.messages.map((m: any) => ({
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: m.content
         }));
 
-        let response: any;
-        let responseText = "";
-        let success = false;
-        let attempts = 0;
-        let toolsExecuted = false;
-
-        while (!success && attempts < API_KEYS.length) {
-            try {
-                // ... (rest of model initialization)
-                const genAI = getGenAI();
-                const model = genAI.getGenerativeModel({
-                    model: "gemini-3-flash-preview",
-                    tools: [{
-                        functionDeclarations: allTools.map(t => ({
-                            name: t.name,
-                            description: t.description,
-                            parameters: t.parameters as any
-                        }))
-                    }],
-                    systemInstruction: `You are Kairos AI, a premium personal assistant. 
+        history.unshift({
+            role: 'system',
+            content: `You are Kairos AI, a premium personal assistant. 
 Mode: ${mode}
 User Name: ${userName}
 Current Context: ${context}
@@ -108,73 +77,66 @@ Instructions:
 8. Use proper GitHub Flavored Markdown (GFM). 
 9. When creating tables, ensure they are preceded and followed by a blank line, and use standard pipe and dash syntax.
 10. Do not use random symbols; keep the layout clean and professional.`
-                });
+        });
 
-                const chat = model.startChat({ history });
-                response = await chat.sendMessage(message);
+        history.push({ role: 'user', content: message });
 
-                // RE-ACT LOOP
-                for (let i = 0; i < 5; i++) {
-                    const candidate = response.response.candidates?.[0];
-                    const parts = candidate?.content?.parts || [];
-                    const calls = parts.filter((p: any) => p.functionCall);
-
-                    if (calls.length === 0) {
-                        responseText = response.response.text();
-                        break;
-                    }
-
-                    const toolResponses = [];
-                    for (const call of calls) {
-                        const toolName = call.functionCall!.name;
-                        const toolArgs = call.functionCall!.args;
-                        const tool = toolsMap[toolName];
-
-                        if (tool) {
-                            console.log(`[AI TOOL CALL] ${toolName}`, toolArgs);
-                            const result = await tool.execute(toolArgs, userId);
-                            toolsExecuted = true;
-                            toolResponses.push({
-                                functionResponse: {
-                                    name: toolName,
-                                    response: result
-                                }
-                            });
-                        } else {
-                            toolResponses.push({
-                                functionResponse: {
-                                    name: toolName,
-                                    response: { error: "Tool not found" }
-                                }
-                            });
-                        }
-                    }
-
-                    response = await chat.sendMessage(toolResponses);
-                    responseText = response.response.text();
-                }
-                success = true;
-            } catch (error: any) {
-                // ... (retry logic)
-                console.error(`Attempt ${attempts + 1} failed with key index ${currentKeyIndex}:`, error.message);
-                attempts++;
-                const isRetryable =
-                    error.message?.includes('429') ||
-                    error.message?.includes('quota') ||
-                    error.message?.includes('503') ||
-                    error.message?.includes('overloaded');
-
-                if (isRetryable) {
-                    if (attempts >= API_KEYS.length) throw error;
-                    continue; // try next key
-                }
-                throw error;
+        const openAITools = allTools.map(t => ({
+            type: 'function',
+            function: {
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters
             }
-        }
+        }));
 
-        // Final safety check for responseText
-        if (!responseText && response.response) {
-            responseText = response.response.text();
+        let responseText = "";
+        let toolsExecuted = false;
+
+        // OpenAI Style Re-Act Loop
+        let currentMessages = [...history];
+
+        for (let i = 0; i < 5; i++) {
+            const response = await chatCompletion(currentMessages, { tools: openAITools });
+            const assistantMessage = response.choices[0].message;
+
+            if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
+                responseText = assistantMessage.content || "";
+                break;
+            }
+
+            // Handle tool calls
+            currentMessages.push({
+                role: 'assistant',
+                content: assistantMessage.content || '',
+                // @ts-ignore - FastRouter uses standard OpenAI tool_calls
+                tool_calls: assistantMessage.tool_calls
+            } as any);
+
+            for (const toolCall of assistantMessage.tool_calls) {
+                const toolName = toolCall.function.name;
+                const toolArgs = JSON.parse(toolCall.function.arguments);
+                const tool = toolsMap[toolName];
+
+                if (tool) {
+                    console.log(`[FASTROUTER TOOL CALL] ${toolName}`, toolArgs);
+                    const result = await tool.execute(toolArgs, userId);
+                    toolsExecuted = true;
+                    currentMessages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        name: toolName,
+                        content: JSON.stringify(result)
+                    });
+                } else {
+                    currentMessages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        name: toolName,
+                        content: JSON.stringify({ error: "Tool not found" })
+                    });
+                }
+            }
         }
 
         const finalContent = responseText || "I've processed your request.";
@@ -184,19 +146,17 @@ Instructions:
         session.messages.push({ role: 'assistant', content: finalContent, timestamp: new Date() });
 
         // Auto-rename
-        if (session.messages.length === 4) {
+        if (session.messages.length === 2 || session.messages.length === 4) {
             try {
-                const namingGenAI = getGenAI();
-                const namingModel = namingGenAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-                const prompt = `Based on the following conversation snippets, generate a very short (3-5 words), professional title for this chat. Respond ONLY with the title.
+                const namingPrompt = `Based on the following conversation snippets, generate a very short (3-5 words), professional title for this chat. Respond ONLY with the title.
                 
                 User: ${session.messages[0].content}
-                AI: ${session.messages[1].content}
-                User: ${session.messages[2].content}
-                AI: ${session.messages[3].content}`;
+                AI: ${session.messages[1] ? session.messages[1].content : "No response"}`;
 
-                const titleResult = await namingModel.generateContent(prompt);
-                const newTitle = titleResult.response.text().trim().replace(/^"(.*)"$/, '$1');
+                const namingResponse = await chatCompletion([
+                    { role: 'user', content: namingPrompt }
+                ]);
+                const newTitle = namingResponse.choices[0].message.content.trim().replace(/^"(.*)"$/, '$1');
                 if (newTitle) {
                     session.title = newTitle;
                 }
@@ -211,7 +171,7 @@ Instructions:
             response: finalContent,
             sessionId: session._id,
             title: session.title,
-            toolsExecuted // New flag
+            toolsExecuted
         });
 
     } catch (error: any) {

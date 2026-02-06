@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
 import { getUserFromRequest } from '@/lib/auth';
 import Transaction from '@/models/Transaction';
 import Account from '@/models/Account';
 import connectDB from '@/lib/mongodb';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+import { chatCompletion } from '@/lib/fastrouter';
 
 export async function POST(req: NextRequest) {
     try {
@@ -81,15 +79,14 @@ ${transactionContext}
 4. You can summarize spending, identify trends, or find specific details.
 5. Provide monetary values in Indian Rupees (₹).
 6. Format your response in Markdown (e.g., use bold for amounts, lists for breakdowns).
-
-**User Question:** ${message}
 `;
 
-        const result = await (ai as any).models.generateContent({
-            model: "gemini-1.5-flash",
-            contents: systemPrompt
-        });
-        const responseText = result.text || "I'm sorry, I couldn't generate a response at this time.";
+        const result = await chatCompletion([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message }
+        ]);
+
+        const responseText = result.choices[0].message.content || "I'm sorry, I couldn't generate a response at this time.";
 
         return NextResponse.json({ response: responseText });
 
