@@ -38,19 +38,23 @@ export async function chatCompletion(messages: ChatMessage[], options: {
     const apiKey = process.env.FASTROUTER_API;
     const model = "google/gemini-3-flash-preview"; // Strictly use this model
 
+    const body = {
+        model,
+        messages,
+        ...(options.tools && { tools: options.tools }),
+        ...(options.tool_choice && { tool_choice: options.tool_choice }),
+        ...(options.response_format && { response_format: options.response_format })
+    };
+
+    console.log("[FASTROUTER REQUEST BODY]", JSON.stringify(body, null, 2).substring(0, 2000));
+
     const response = await fetch("https://go.fastrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`
         },
-        body: JSON.stringify({
-            model,
-            messages,
-            ...(options.tools && { tools: options.tools }),
-            ...(options.tool_choice && { tool_choice: options.tool_choice }),
-            ...(options.response_format && { response_format: options.response_format })
-        })
+        body: JSON.stringify(body)
     });
 
     if (!response.ok) {

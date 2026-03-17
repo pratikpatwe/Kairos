@@ -119,16 +119,27 @@ Instructions:
             }
 
             // Handle tool calls - Crucial: Capture signatures for Gemini 3
-            const sig = assistantMessage.thought_signature || (assistantMessage.tool_calls[0] as any)?.function?.thought_signature;
+            // Extract signature from all possible locations in the response
+            const responseSig = assistantMessage.thought_signature;
+            const firstToolSig = (assistantMessage.tool_calls[0] as any)?.thought_signature || 
+                                (assistantMessage.tool_calls[0] as any)?.function?.thought_signature;
             
-            const toolCallsToSave = assistantMessage.tool_calls.map(tc => ({
-                ...tc,
-                function: {
-                    ...tc.function,
-                    // Inject signature into nested function if missing but found at top level
-                    thought_signature: tc.function.thought_signature || sig
-                }
-            }));
+            const sig = responseSig || firstToolSig;
+            
+            console.log(`[DEBUG] Extracted Signature: ${sig ? sig.substring(0, 30) + "..." : "MISSING"}`);
+
+            const toolCallsToSave = assistantMessage.tool_calls.map((tc: any) => {
+                // Ensure every tool call part has the signature if available
+                const tcSig = tc.thought_signature || tc.function?.thought_signature || sig;
+                return {
+                    ...tc,
+                    thought_signature: tcSig,
+                    function: {
+                        ...tc.function,
+                        thought_signature: tcSig
+                    }
+                };
+            });
 
             currentMessages.push({
                 role: 'assistant',
@@ -140,11 +151,13 @@ Instructions:
 
             for (const toolCall of toolCallsToSave) {
                 const toolName = toolCall.function.name;
+                const cleanToolName = toolName.includes(':') ? toolName.split(':').pop()! : toolName;
+                
                 const toolArgs = JSON.parse(toolCall.function.arguments);
-                const tool = toolsMap[toolName];
+                const tool = toolsMap[cleanToolName];
 
                 if (tool) {
-                    console.log(`[FASTROUTER TOOL CALL] ${toolName}`, toolArgs);
+                    console.log(`[FASTROUTER] Executing ${cleanToolName} (Original: ${toolName})`);
                     const result = await tool.execute(toolArgs, userId);
                     toolsExecuted = true;
                     currentMessages.push({
@@ -154,11 +167,12 @@ Instructions:
                         content: JSON.stringify(result)
                     });
                 } else {
+                    console.warn(`[FASTROUTER] Tool not found: ${toolName}`);
                     currentMessages.push({
                         role: 'tool',
                         tool_call_id: toolCall.id,
                         name: toolName,
-                        content: JSON.stringify({ error: "Tool not found" })
+                        content: JSON.stringify({ error: `Tool ${toolName} not found` })
                     });
                 }
             }
