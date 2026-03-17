@@ -4,6 +4,7 @@ export interface IMessage {
     role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
     timestamp: Date;
+    thought?: string;
     thought_signature?: string;
     tool_call_id?: string;
     name?: string;
@@ -23,6 +24,7 @@ const MessageSchema = new Schema({
     role: { type: String, enum: ['user', 'assistant', 'system', 'tool'], required: true },
     content: { type: String, required: false, default: "" },
     timestamp: { type: Date, default: Date.now },
+    thought: { type: String, required: false },
     thought_signature: { type: String, required: false },
     tool_call_id: { type: String, required: false },
     name: { type: String, required: false },

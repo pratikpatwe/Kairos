@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
             content: m.content || "",
             name: m.name,
             tool_call_id: m.tool_call_id,
+            thought: m.thought,
             thought_signature: m.thought_signature,
             tool_calls: m.tool_calls
         }));
@@ -101,23 +102,43 @@ Instructions:
         let currentMessages = [...history];
 
         for (let i = 0; i < 5; i++) {
+            console.log(`[CHAT] Loop iterate ${i}, messages count: ${currentMessages.length}`);
             const response = await chatCompletion(currentMessages, { tools: openAITools });
             const assistantMessage = response.choices[0].message;
+
+            console.log("[GEMINI RESPONSE]", JSON.stringify({
+                content: assistantMessage.content?.substring(0, 50),
+                thought: assistantMessage.thought?.substring(0, 50),
+                has_signature: !!assistantMessage.thought_signature,
+                tool_calls_count: assistantMessage.tool_calls?.length
+            }));
 
             if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
                 responseText = assistantMessage.content || "";
                 break;
             }
 
-            // Handle tool calls
+            // Handle tool calls - Crucial: Capture signatures for Gemini 3
+            const sig = assistantMessage.thought_signature || (assistantMessage.tool_calls[0] as any)?.function?.thought_signature;
+            
+            const toolCallsToSave = assistantMessage.tool_calls.map(tc => ({
+                ...tc,
+                function: {
+                    ...tc.function,
+                    // Inject signature into nested function if missing but found at top level
+                    thought_signature: tc.function.thought_signature || sig
+                }
+            }));
+
             currentMessages.push({
                 role: 'assistant',
                 content: assistantMessage.content || '',
-                thought_signature: assistantMessage.thought_signature,
-                tool_calls: assistantMessage.tool_calls
+                thought: assistantMessage.thought,
+                thought_signature: sig,
+                tool_calls: toolCallsToSave
             });
 
-            for (const toolCall of assistantMessage.tool_calls) {
+            for (const toolCall of toolCallsToSave) {
                 const toolName = toolCall.function.name;
                 const toolArgs = JSON.parse(toolCall.function.arguments);
                 const tool = toolsMap[toolName];
@@ -160,6 +181,7 @@ Instructions:
                 content: msg.content || "",
                 name: msg.name,
                 tool_call_id: msg.tool_call_id,
+                thought: msg.thought,
                 thought_signature: msg.thought_signature,
                 tool_calls: (msg as any).tool_calls,
                 timestamp: new Date()
