@@ -3,6 +3,8 @@ export interface ChatMessage {
     content: string;
     name?: string;
     tool_call_id?: string;
+    thought_signature?: string;
+    tool_calls?: any[];
 }
 
 export interface FastRouterResponse {
@@ -10,6 +12,7 @@ export interface FastRouterResponse {
         message: {
             role: string;
             content: string;
+            thought_signature?: string;
             tool_calls?: {
                 id: string;
                 type: 'function';

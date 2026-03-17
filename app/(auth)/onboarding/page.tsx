@@ -150,7 +150,7 @@ function OnboardingContent() {
                 email,
                 password,
                 options: {
-                    emailRedirectTo: `${window.location.origin}/auth/callback`,
+                    emailRedirectTo: `https://kairos-buildshot.vercel.app/auth/callback`,
                     data: {
                         first_name: firstName,
                         last_name: lastName,
@@ -184,7 +184,7 @@ function OnboardingContent() {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: provider.toLowerCase() as any,
                 options: {
-                    redirectTo: `${window.location.origin}/auth/callback`,
+                    redirectTo: `https://kairos-buildshot.vercel.app/auth/callback`,
                 },
             })
 
@@ -213,7 +213,7 @@ function OnboardingContent() {
         try {
             const supabase = createClient()
             const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/settings`,
+                redirectTo: `https://kairos-buildshot.vercel.app/auth/callback?next=/dashboard/settings`,
             })
 
             if (error) {

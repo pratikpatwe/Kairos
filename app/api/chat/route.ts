@@ -55,8 +55,12 @@ export async function POST(req: NextRequest) {
         }
 
         const history: ChatMessage[] = session.messages.map((m: any) => ({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: m.content
+            role: m.role,
+            content: m.content || "",
+            name: m.name,
+            tool_call_id: m.tool_call_id,
+            thought_signature: m.thought_signature,
+            tool_calls: m.tool_calls
         }));
 
         history.unshift({
@@ -109,9 +113,9 @@ Instructions:
             currentMessages.push({
                 role: 'assistant',
                 content: assistantMessage.content || '',
-                // @ts-ignore - FastRouter uses standard OpenAI tool_calls
+                thought_signature: assistantMessage.thought_signature,
                 tool_calls: assistantMessage.tool_calls
-            } as any);
+            });
 
             for (const toolCall of assistantMessage.tool_calls) {
                 const toolName = toolCall.function.name;
@@ -141,9 +145,35 @@ Instructions:
 
         const finalContent = responseText || "I've processed your request.";
 
-        // Update session
-        session.messages.push({ role: 'user', content: message, timestamp: new Date() });
-        session.messages.push({ role: 'assistant', content: finalContent, timestamp: new Date() });
+        // Update session with all new messages from history (excluding system prompt)
+        const newMessages = currentMessages.slice(history.length);
+        
+        session.messages.push({ 
+            role: 'user' as const, 
+            content: message, 
+            timestamp: new Date() 
+        });
+        
+        for (const msg of newMessages) {
+            session.messages.push({
+                role: msg.role as any,
+                content: msg.content || "",
+                name: msg.name,
+                tool_call_id: msg.tool_call_id,
+                thought_signature: msg.thought_signature,
+                tool_calls: (msg as any).tool_calls,
+                timestamp: new Date()
+            });
+        }
+        
+        // If the loop broke early or the final content isn't in newMessages, add it
+        if (finalContent && !newMessages.some(m => m.content === finalContent)) {
+            session.messages.push({ 
+                role: 'assistant' as const, 
+                content: finalContent, 
+                timestamp: new Date() 
+            });
+        }
 
         // Auto-rename
         if (session.messages.length === 2 || session.messages.length === 4) {

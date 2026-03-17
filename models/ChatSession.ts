@@ -1,9 +1,13 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IMessage {
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
     timestamp: Date;
+    thought_signature?: string;
+    tool_call_id?: string;
+    name?: string;
+    tool_calls?: any[];
 }
 
 export interface IChatSession extends Document {
@@ -16,9 +20,13 @@ export interface IChatSession extends Document {
 }
 
 const MessageSchema = new Schema({
-    role: { type: String, enum: ['user', 'assistant'], required: true },
-    content: { type: String, required: true },
-    timestamp: { type: Date, default: Date.now }
+    role: { type: String, enum: ['user', 'assistant', 'system', 'tool'], required: true },
+    content: { type: String, required: false, default: "" },
+    timestamp: { type: Date, default: Date.now },
+    thought_signature: { type: String, required: false },
+    tool_call_id: { type: String, required: false },
+    name: { type: String, required: false },
+    tool_calls: { type: Schema.Types.Mixed, required: false }
 });
 
 const ChatSessionSchema: Schema = new Schema(
