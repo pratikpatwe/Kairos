@@ -38,6 +38,28 @@ export const metadata: Metadata = {
     description: "AI-powered life management for finances, habits, and well-being.",
     images: ["https://kairos-buildshot.vercel.app/kairos-X.png"],
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Kairos",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  other: {
+    "viewport-fit": "cover",
+  },
+  icons: {
+    apple: "/kairos-logo.svg",
+  }
+};
+
+export const viewport = {
+  themeColor: "#0B0B0B",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
