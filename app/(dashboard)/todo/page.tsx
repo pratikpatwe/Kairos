@@ -106,7 +106,7 @@ export default function TodoPage() {
     }, [activeView, labelFilter, dateFilter, searchQuery]);
 
     useEffect(() => {
-        supabase.auth.getUser().then(({ data: { user } }) => {
+        supabase.auth.getUser().then(({ data: { user } }: any) => {
             if (user) {
                 setUser(user);
             } else {

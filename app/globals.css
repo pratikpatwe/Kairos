@@ -158,8 +158,18 @@
     @apply border-border outline-ring/50;
   }
 
+  html {
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased overflow-x-hidden;
+    user-select: none;
+  }
+
+  p, h1, h2, h3, h4, h5, h6, span, input, textarea, code {
+    user-select: text;
   }
 
   /* Selection Fix */

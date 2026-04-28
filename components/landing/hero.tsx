@@ -11,10 +11,13 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { usePWA } from "@/hooks/use-pwa"
+import { Download } from "lucide-react"
 
 export default function Hero() {
     const [isLaunchHovered, setIsLaunchHovered] = useState(false)
     const [isHowHovered, setIsHowHovered] = useState(false)
+    const { isInstallable, installApp } = usePWA()
 
     return (
         <>
@@ -65,12 +68,12 @@ export default function Hero() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.5, delay: 0.3 }}
-                            className="flex flex-row items-center justify-center gap-3 sm:gap-4"
+                            className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4"
                         >
                             {/* Primary CTA */}
-                            <Link href="/dashboard">
+                            <Link href="/dashboard" className="w-full sm:w-auto">
                                 <div
-                                    className="group cursor-pointer border border-emerald-500/30 bg-gradient-to-r from-emerald-500 to-green-600 gap-1.5 sm:gap-2 h-10 sm:h-[56px] flex items-center px-4 sm:px-6 rounded-full shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 hover:-translate-y-1"
+                                    className="group cursor-pointer border border-emerald-500/30 bg-gradient-to-r from-emerald-500 to-green-600 gap-1.5 sm:gap-2 h-12 sm:h-[56px] flex items-center justify-center px-4 sm:px-6 rounded-full shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all duration-300 hover:-translate-y-1 w-full sm:w-auto"
                                     onMouseEnter={() => setIsLaunchHovered(true)}
                                     onMouseLeave={() => setIsLaunchHovered(false)}
                                 >
@@ -107,9 +110,9 @@ export default function Hero() {
                             </Link>
 
                             {/* Secondary CTA */}
-                            <Link href="#features">
+                            <Link href="#features" className="w-full sm:w-auto">
                                 <div
-                                    className="group cursor-pointer border border-border bg-secondary/50 backdrop-blur-sm gap-1.5 sm:gap-2 h-10 sm:h-[56px] flex items-center px-4 sm:px-6 rounded-full hover:bg-secondary/80 transition-all duration-300"
+                                    className="group cursor-pointer border border-border bg-secondary/50 backdrop-blur-sm gap-1.5 sm:gap-2 h-12 sm:h-[56px] flex items-center justify-center px-4 sm:px-6 rounded-full hover:bg-secondary/80 transition-all duration-300 w-full sm:w-auto"
                                     onMouseEnter={() => setIsHowHovered(true)}
                                     onMouseLeave={() => setIsHowHovered(false)}
                                 >
@@ -144,6 +147,22 @@ export default function Hero() {
                                     </div>
                                 </div>
                             </Link>
+
+                            {/* PWA Install Button */}
+                            {isInstallable && (
+                                <motion.button
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={installApp}
+                                    className="group cursor-pointer border border-emerald-500/20 bg-emerald-500/10 backdrop-blur-md gap-1.5 sm:gap-2 h-12 sm:h-[56px] flex items-center justify-center px-4 sm:px-6 rounded-full hover:bg-emerald-500/20 transition-all duration-300 w-full sm:w-auto"
+                                >
+                                    <Download className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400 group-hover:animate-bounce" />
+                                    <p className="font-semibold tracking-tight text-emerald-400 text-sm sm:text-base">
+                                        Install App
+                                    </p>
+                                </motion.button>
+                            )}
                         </motion.div>
 
                         {/* SDG Marquee */}
